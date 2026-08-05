@@ -3,6 +3,7 @@ import os
 import shutil
 import zipfile
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from src.data_loader import DataLoader
 from src.agents import CoordinatorAgent
 
@@ -11,7 +12,6 @@ def process_single_case(coordinator, input_dir, fname):
     with open(input_path, "r", encoding="utf-8") as f:
         case_input = json.load(f)
 
-    # Process case with multi-agent pipeline
     output_payload, case_traces = coordinator.process_case(case_input)
 
     trace_entry = {
@@ -28,13 +28,13 @@ def create_submission_zip(output_dir, input_files, zip_path="output.zip"):
     if os.path.exists(zip_path):
         os.remove(zip_path)
 
-    # Create clean flat zip containing EC_001.json to EC_050.json
+    # Create FLAT zip archive containing EC_001.json to EC_050.json directly at root of ZIP
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for fname in input_files:
             file_path = os.path.join(output_dir, fname)
             zf.write(file_path, arcname=fname)
 
-    print(f"Created submission archive '{zip_path}' containing EXACTLY {len(input_files)} JSON files.")
+    print(f"Created submission archive '{zip_path}' containing EXACTLY {len(input_files)} FLAT JSON files.")
 
 def main():
     print("=" * 60)
@@ -67,21 +67,29 @@ def main():
     input_files = [f for f in os.listdir(input_dir) if f.startswith("EC_") and f.endswith(".json")]
     input_files.sort()
 
-    print(f"Processing {len(input_files)} dispute cases sequentially to guarantee 100% LLM API success without Rate Limits...")
+    print(f"Processing {len(input_files)} dispute cases with fast parallel threads via Groq API (llama-3.1-8b-instant)...")
 
     results_map = {}
     traces_map = {}
 
-    completed_count = 0
-    for fname in input_files:
-        try:
-            fname, output_payload, trace_entry = process_single_case(coordinator, input_dir, fname)
-            results_map[fname] = output_payload
-            traces_map[fname] = trace_entry
-            completed_count += 1
-            print(f"[{completed_count:02d}/{len(input_files)}] Processed {fname} -> Primary: {output_payload['case_assessment']['primary_issue']}")
-        except Exception as exc:
-            print(f"[ERROR] Case {fname} generated an exception: {exc}")
+    max_workers = 2
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_file = {
+            executor.submit(process_single_case, coordinator, input_dir, fname): fname
+            for fname in input_files
+        }
+        
+        completed_count = 0
+        for future in as_completed(future_to_file):
+            fname = future_to_file[future]
+            try:
+                fname, output_payload, trace_entry = future.result()
+                results_map[fname] = output_payload
+                traces_map[fname] = trace_entry
+                completed_count += 1
+                print(f"[{completed_count:02d}/{len(input_files)}] Processed {fname} -> Primary: {output_payload['case_assessment']['primary_issue']}")
+            except Exception as exc:
+                print(f"[ERROR] Case {fname} generated an exception: {exc}")
 
     # Write sorted output JSON files and trace logs
     with open(logging_trace_file, "w", encoding="utf-8") as tf:
@@ -114,7 +122,7 @@ def main():
     shutil.copy(logging_meta_file, "metadata.json")
     print(f"Generated metadata.json in '{logging_dir}/' and root.")
 
-    # 4. Create output.zip containing EXACTLY 50 JSON files flat at root of ZIP
+    # 4. Create FLAT output.zip containing EC_001.json to EC_050.json
     create_submission_zip(output_dir, input_files, zip_path="output.zip")
     
     print("=" * 60)

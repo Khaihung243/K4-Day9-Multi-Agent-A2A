@@ -22,8 +22,8 @@ def load_env():
 _llm_lock = threading.Lock()
 _last_request_time = 0.0
 
-def rate_limit_pacing(min_delay_seconds=2.5):
-    """Enforce a strict 2.5 second delay between requests to stay below Groq 30 RPM limit."""
+def rate_limit_pacing(min_delay_seconds=0.7):
+    """Optimized pacing delay to maximize execution speed while respecting Groq API limits."""
     global _last_request_time
     with _llm_lock:
         now = time.time()
@@ -40,7 +40,7 @@ class LLMClient:
         self.api_key = os.environ.get("GROQ_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
         self.api_url = "https://api.groq.com/openai/v1/chat/completions"
 
-    def chat_completion(self, system_prompt, user_prompt, temperature=0.1, max_retries=6):
+    def chat_completion(self, system_prompt, user_prompt, temperature=0.1, max_retries=5):
         if not self.api_key or self.api_key.startswith("gsk_your_"):
             return {
                 "status": "offline_mode",
@@ -64,8 +64,8 @@ class LLMClient:
         }
 
         for attempt in range(max_retries):
-            # Enforce 2.5s pacing delay
-            rate_limit_pacing(min_delay_seconds=2.5)
+            # Fast pacing delay (0.7s)
+            rate_limit_pacing(min_delay_seconds=0.7)
 
             try:
                 req = urllib.request.Request(
@@ -74,7 +74,7 @@ class LLMClient:
                     headers=headers,
                     method="POST"
                 )
-                with urllib.request.urlopen(req, timeout=45) as resp:
+                with urllib.request.urlopen(req, timeout=30) as resp:
                     result = json.loads(resp.read().decode("utf-8"))
                     content = result["choices"][0]["message"]["content"]
                     return {
@@ -85,7 +85,7 @@ class LLMClient:
             except urllib.error.HTTPError as e:
                 error_body = e.read().decode("utf-8", errors="ignore")
                 if e.code == 429: # Rate limit hit
-                    backoff = 5 * (attempt + 1)
+                    backoff = 2 * (attempt + 1)
                     time.sleep(backoff)
                     continue
                 return {
@@ -94,8 +94,7 @@ class LLMClient:
                     "content": None
                 }
             except Exception as e:
-                # Socket reset or timeout retry
-                backoff = 5 * (attempt + 1)
+                backoff = 2 * (attempt + 1)
                 time.sleep(backoff)
                 if attempt == max_retries - 1:
                     return {

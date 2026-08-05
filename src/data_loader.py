@@ -43,8 +43,8 @@ class DataLoader:
             for row in reader:
                 pid = row.get("product_id", "").strip()
                 cat_pt = row.get("product_category_name", "").strip()
-                cat_en = self.category_translation.get(cat_pt, cat_pt) if cat_pt else ""
-                row["category_name"] = cat_en
+                # Use exact product_category_name as present in olist_products_dataset.csv
+                row["category_name"] = cat_pt
                 self.products[pid] = row
 
     def _load_customers(self):
@@ -55,7 +55,6 @@ class DataLoader:
             reader = csv.DictReader(f)
             for row in reader:
                 cid = row.get("customer_id", "").strip()
-                c_unique_id = row.get("customer_unique_id", "").strip()
                 self.customers[cid] = row
 
     def _load_orders(self):
