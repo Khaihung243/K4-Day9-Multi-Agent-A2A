@@ -10,18 +10,24 @@ def main():
     print("Starting Multi-Agent E-commerce Dispute Resolution Pipeline")
     print("=" * 60)
 
-    # 1. Initialize Data Loader
-    data_loader = DataLoader(data_dir="data")
-    data_loader.load_all()
-
-    # 2. Initialize Coordinator Agent
-    coordinator = CoordinatorAgent(data_loader)
-
     input_dir = "input"
     output_dir = "output"
     logging_dir = "logging"
+    
+    # 1. Clean old files in output directory
+    if os.path.exists(output_dir):
+        print(f"Cleaning old files in '{output_dir}/'...")
+        for file in os.listdir(output_dir):
+            if file.endswith(".json"):
+                os.remove(os.path.join(output_dir, file))
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(logging_dir, exist_ok=True)
+
+    # 2. Initialize Data Loader & Coordinator Agent
+    data_loader = DataLoader(data_dir="data")
+    data_loader.load_all()
+
+    coordinator = CoordinatorAgent(data_loader)
 
     logging_trace_file = os.path.join(logging_dir, "trace.jsonl")
     root_trace_file = "trace.jsonl"
@@ -78,13 +84,18 @@ def main():
     shutil.copy(logging_meta_file, "metadata.json")
     print(f"Generated metadata.json in '{logging_dir}/' and root.")
 
-    # 4. Create output.zip containing only the 50 JSON files
+    # 4. Create output.zip containing output/EC_001.json to output/EC_050.json
     zip_path = "output.zip"
+    if os.path.exists(zip_path):
+        os.remove(zip_path)
+
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for fname in input_files:
             file_path = os.path.join(output_dir, fname)
-            zf.write(file_path, arcname=fname)
-    print(f"Created submission archive '{zip_path}' containing {len(input_files)} JSON files.")
+            arc_name = f"output/{fname}"
+            zf.write(file_path, arcname=arc_name)
+            
+    print(f"Created submission archive '{zip_path}' containing {len(input_files)} JSON files under 'output/' directory.")
     print("=" * 60)
     print("Pipeline Execution Completed Successfully!")
     print("=" * 60)
