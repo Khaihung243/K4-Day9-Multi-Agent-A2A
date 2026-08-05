@@ -22,21 +22,8 @@ class CustomerAgent:
             all_cust_orders = self.data_loader.get_customer_orders(customer_unique_id)
             related_order_ids = [oid for oid in all_cust_orders if oid != order_id]
 
-        # Call LLM to record Agent reasoning prompt & trace
-        system_prompt = "You are CustomerAgent in an E-commerce Multi-Agent system. Your job is to analyze customer history context."
-        user_prompt = f"""
-        Analyze customer history:
-        - Customer ID: {customer_id}
-        - Customer Unique ID: {customer_unique_id}
-        - Claimed Order ID: {order_id}
-        - Related Past Orders Count: {len(related_order_ids)}
-        - Related Past Orders: {related_order_ids}
-
-        Return a JSON object with:
-        "customer_unique_id": string,
-        "related_order_ids": array of strings,
-        "agent_notes": string
-        """
+        system_prompt = "You are CustomerAgent in an E-commerce Multi-Agent system. Return JSON."
+        user_prompt = f"Analyze customer {customer_unique_id} with related orders {related_order_ids}."
 
         llm_response = self.llm.chat_completion(system_prompt, user_prompt)
 
@@ -50,7 +37,8 @@ class CustomerAgent:
             "model": "llama-3.1-8b-instant",
             "prompt_summary": f"Analyzed customer {customer_unique_id} with {len(related_order_ids)} related orders.",
             "llm_status": llm_response.get("status"),
-            "llm_output": llm_response.get("content")
+            "llm_output": llm_response.get("content"),
+            "llm_error": llm_response.get("error")
         }
 
         return result_context, trace_log

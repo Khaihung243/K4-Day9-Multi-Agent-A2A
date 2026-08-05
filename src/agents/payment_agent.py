@@ -39,19 +39,8 @@ class PaymentAgent:
             difference_brl = round(payment_total_brl - expected_total_brl, 2)
             reconciled = abs(difference_brl) <= 0.10
 
-        # LLM Reasoning Call & Trace
-        system_prompt = "You are PaymentAgent in an E-commerce Multi-Agent system."
-        user_prompt = f"""
-        Reconcile Payments:
-        - Order ID: {order_id}
-        - Total Payments Count: {len(payments)}
-        - Payment Total BRL: {payment_total_brl}
-        - Expected Total BRL: {expected_total_brl}
-        - Difference BRL: {difference_brl}
-        - Reconciled Status: {reconciled}
-
-        Return a JSON response confirming reconciliation.
-        """
+        system_prompt = "You are PaymentAgent. Return JSON."
+        user_prompt = f"Reconcile Payments for Order {order_id}: Paid {payment_total_brl}, Expected {expected_total_brl}."
         llm_response = self.llm.chat_completion(system_prompt, user_prompt)
 
         result_context = {
@@ -72,7 +61,8 @@ class PaymentAgent:
             "model": "llama-3.1-8b-instant",
             "prompt_summary": f"Reconciled {len(payments)} payments. Total Paid: {payment_total_brl}, Reconciled: {reconciled}",
             "llm_status": llm_response.get("status"),
-            "llm_output": llm_response.get("content")
+            "llm_output": llm_response.get("content"),
+            "llm_error": llm_response.get("error")
         }
 
         return result_context, trace_log

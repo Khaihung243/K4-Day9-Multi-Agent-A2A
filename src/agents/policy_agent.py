@@ -21,7 +21,6 @@ class PolicyAgent:
         late_sellers = delivery_ctx["late_handoff_seller_ids"]
         payment_reconciled = payment_ctx.get("reconciled")
 
-        # Primary Issue Evaluation
         primary_issue = None
         responsible_parties = []
         recommended_refund_brl = 0.0
@@ -73,7 +72,6 @@ class PolicyAgent:
         case_status = "action_required" if recommended_refund_brl > 0 else "no_action"
         confidence = 0.95
 
-        # Secondary Issues Evaluation
         secondary_issues = []
         items_count = len(order_prod_ctx["items"])
         distinct_sellers_count = len(order_prod_ctx["seller_ids"])
@@ -92,7 +90,6 @@ class PolicyAgent:
         if categories_count >= 2:
             secondary_issues.append("multiple_categories")
 
-        # Resolution Actions
         resolution_actions = [primary_action]
         
         if primary_issue == "late_delivery_seller":
@@ -109,7 +106,6 @@ class PolicyAgent:
         if "split_payment" in secondary_issues and primary_issue != "valid_split_payment":
             resolution_actions.append("verify_payment_allocation")
 
-        # Evidence IDs
         evidence_ids = [f"order:{order_id}"]
         for item_id in order_prod_ctx["item_ids"]:
             evidence_ids.append(f"item:{item_id}")
@@ -123,20 +119,8 @@ class PolicyAgent:
 
         evidence_ids.append(f"policy:{root_cause_code}")
 
-        # LLM Reasoning & Evaluation Prompt
-        system_prompt = "You are PolicyAgent in an E-commerce Multi-Agent system implementing EC_POLICY_V2."
-        user_prompt = f"""
-        Evaluate EC_POLICY_V2 for Order {order_id}:
-        - Order Status: {order_status}
-        - Primary Issue Identified: {primary_issue}
-        - Secondary Issues Identified: {secondary_issues}
-        - Root Cause Code: {root_cause_code}
-        - Recommended Refund BRL: {recommended_refund_brl}
-        - Case Status: {case_status}
-        - Actions: {resolution_actions}
-
-        Return JSON validating policy compliance.
-        """
+        system_prompt = "You are PolicyAgent implementing EC_POLICY_V2. Return JSON."
+        user_prompt = f"Evaluate EC_POLICY_V2 for Order {order_id}: Primary Issue: {primary_issue}, Refund: {recommended_refund_brl}."
         llm_response = self.llm.chat_completion(system_prompt, user_prompt)
 
         result_context = {
@@ -156,7 +140,8 @@ class PolicyAgent:
             "model": "llama-3.1-8b-instant",
             "prompt_summary": f"Evaluated EC_POLICY_V2 -> Primary: {primary_issue}, Refund: {recommended_refund_brl} BRL",
             "llm_status": llm_response.get("status"),
-            "llm_output": llm_response.get("content")
+            "llm_output": llm_response.get("content"),
+            "llm_error": llm_response.get("error")
         }
 
         return result_context, trace_log

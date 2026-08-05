@@ -71,9 +71,8 @@ class VerifierAgent:
             "resolution_actions": policy_res["resolution_actions"][:5]
         }
 
-        # LLM Verification Prompt
-        system_prompt = "You are VerifierAgent in an E-commerce Multi-Agent system."
-        user_prompt = f"Verify JSON Schema compliance for case {case_id}."
+        system_prompt = "You are VerifierAgent. Return JSON."
+        user_prompt = f"Verify JSON Schema for case {case_id}."
         llm_response = self.llm.chat_completion(system_prompt, user_prompt)
 
         trace_log = {
@@ -81,7 +80,8 @@ class VerifierAgent:
             "model": "llama-3.1-8b-instant",
             "prompt_summary": f"Verified case {case_id} JSON schema and array bounds.",
             "llm_status": llm_response.get("status"),
-            "llm_output": llm_response.get("content")
+            "llm_output": llm_response.get("content"),
+            "llm_error": llm_response.get("error")
         }
 
         return payload, trace_log

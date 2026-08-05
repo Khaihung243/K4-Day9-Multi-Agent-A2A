@@ -50,20 +50,8 @@ class OrderProductAgent:
         item_total_brl = round(item_total_brl, 2)
         freight_total_brl = round(freight_total_brl, 2)
 
-        # Call LLM for Agent reasoning
-        system_prompt = "You are OrderProductAgent in an E-commerce Multi-Agent system."
-        user_prompt = f"""
-        Analyze order items & sellers:
-        - Order ID: {order_id}
-        - Total Items: {len(items)}
-        - Distinct Product IDs: {product_ids}
-        - Distinct Seller IDs: {seller_ids}
-        - Categories: {category_names}
-        - Item Total BRL: {item_total_brl}
-        - Freight Total BRL: {freight_total_brl}
-
-        Return a JSON response summarizing item & seller analysis.
-        """
+        system_prompt = "You are OrderProductAgent. Return JSON."
+        user_prompt = f"Analyze order {order_id} with {len(items)} items and {len(seller_ids)} sellers."
         llm_response = self.llm.chat_completion(system_prompt, user_prompt)
 
         result_context = {
@@ -81,7 +69,8 @@ class OrderProductAgent:
             "model": "llama-3.1-8b-instant",
             "prompt_summary": f"Analyzed {len(items)} items, {len(seller_ids)} sellers, {len(category_names)} categories.",
             "llm_status": llm_response.get("status"),
-            "llm_output": llm_response.get("content")
+            "llm_output": llm_response.get("content"),
+            "llm_error": llm_response.get("error")
         }
 
         return result_context, trace_log

@@ -60,18 +60,8 @@ class DeliveryAgent:
                 "late_handoff": is_late
             })
 
-        # LLM Reasoning Call & Trace
-        system_prompt = "You are DeliveryAgent in an E-commerce Multi-Agent system."
-        user_prompt = f"""
-        Analyze Delivery Timestamps:
-        - Delivered At: {delivered_str}
-        - Estimated Delivery At: {estimated_str}
-        - Carrier Handoff At: {carrier_str}
-        - Delivery Variance Hours: {delivery_variance_hours}
-        - Late Handoff Seller IDs: {late_handoff_seller_ids}
-
-        Return a JSON summarizing delivery delay assessment.
-        """
+        system_prompt = "You are DeliveryAgent. Return JSON."
+        user_prompt = f"Analyze delivery for order {order_id}: Variance {delivery_variance_hours}h."
         llm_response = self.llm.chat_completion(system_prompt, user_prompt)
 
         result_context = {
@@ -88,7 +78,8 @@ class DeliveryAgent:
             "model": "llama-3.1-8b-instant",
             "prompt_summary": f"Calculated delivery variance {delivery_variance_hours}h. Late sellers: {late_handoff_seller_ids}",
             "llm_status": llm_response.get("status"),
-            "llm_output": llm_response.get("content")
+            "llm_output": llm_response.get("content"),
+            "llm_error": llm_response.get("error")
         }
 
         return result_context, trace_log

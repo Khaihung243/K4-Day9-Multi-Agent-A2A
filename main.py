@@ -2,8 +2,40 @@ import json
 import os
 import shutil
 import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from src.data_loader import DataLoader
 from src.agents import CoordinatorAgent
+
+def process_single_case(coordinator, input_dir, fname):
+    input_path = os.path.join(input_dir, fname)
+    with open(input_path, "r", encoding="utf-8") as f:
+        case_input = json.load(f)
+
+    # Process case with multi-agent pipeline
+    output_payload, case_traces = coordinator.process_case(case_input)
+
+    trace_entry = {
+        "case_id": case_input.get("case_id"),
+        "input_file": fname,
+        "traces": case_traces,
+        "primary_issue": output_payload["case_assessment"]["primary_issue"],
+        "case_status": output_payload["case_assessment"]["case_status"]
+    }
+
+    return fname, output_payload, trace_entry
+
+def create_output_zip(output_dir, input_files, zip_path="output.zip"):
+    if os.path.exists(zip_path):
+        os.remove(zip_path)
+
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for fname in input_files:
+            file_path = os.path.join(output_dir, fname)
+            # Must use forward slash "output/EC_xxx.json" inside zip archive
+            arc_name = f"output/{fname}"
+            zf.write(file_path, arcname=arc_name)
+
+    print(f"Created submission archive '{zip_path}' containing EXACTLY {len(input_files)} files with 'output/' path prefix.")
 
 def main():
     print("=" * 60)
@@ -14,14 +46,15 @@ def main():
     output_dir = "output"
     logging_dir = "logging"
     
-    # 1. Clean old files in output directory
-    if os.path.exists(output_dir):
-        print(f"Cleaning old files in '{output_dir}/'...")
-        for file in os.listdir(output_dir):
-            if file.endswith(".json"):
-                os.remove(os.path.join(output_dir, file))
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(logging_dir, exist_ok=True)
+
+    # 1. Clean old JSON files in output directory (remove .gitkeep if present)
+    print(f"Cleaning output directory '{output_dir}/'...")
+    for file in os.listdir(output_dir):
+        file_path = os.path.join(output_dir, file)
+        if file != ".gitkeep" and os.path.isfile(file_path):
+            os.remove(file_path)
 
     # 2. Initialize Data Loader & Coordinator Agent
     data_loader = DataLoader(data_dir="data")
@@ -32,37 +65,43 @@ def main():
     logging_trace_file = os.path.join(logging_dir, "trace.jsonl")
     root_trace_file = "trace.jsonl"
 
-    # Get input files sorted EC_001.json to EC_050.json
     input_files = [f for f in os.listdir(input_dir) if f.startswith("EC_") and f.endswith(".json")]
     input_files.sort()
 
-    print(f"Processing {len(input_files)} dispute cases...")
+    print(f"Processing {len(input_files)} dispute cases with Rate Limit pacing via Groq API (llama-3.1-8b-instant)...")
 
+    results_map = {}
+    traces_map = {}
+
+    max_workers = 3
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_file = {
+            executor.submit(process_single_case, coordinator, input_dir, fname): fname
+            for fname in input_files
+        }
+        
+        completed_count = 0
+        for future in as_completed(future_to_file):
+            fname = future_to_file[future]
+            try:
+                fname, output_payload, trace_entry = future.result()
+                results_map[fname] = output_payload
+                traces_map[fname] = trace_entry
+                completed_count += 1
+                print(f"[{completed_count:02d}/{len(input_files)}] Processed {fname} -> Primary: {output_payload['case_assessment']['primary_issue']}")
+            except Exception as exc:
+                print(f"[ERROR] Case {fname} generated an exception: {exc}")
+
+    # Write sorted output JSON files and trace logs
     with open(logging_trace_file, "w", encoding="utf-8") as tf:
         for fname in input_files:
-            input_path = os.path.join(input_dir, fname)
-            with open(input_path, "r", encoding="utf-8") as f:
-                case_input = json.load(f)
+            if fname in results_map:
+                output_path = os.path.join(output_dir, fname)
+                with open(output_path, "w", encoding="utf-8") as f:
+                    json.dump(results_map[fname], f, ensure_ascii=False, indent=2)
 
-            # Process case with multi-agent pipeline
-            output_payload, case_traces = coordinator.process_case(case_input)
+                tf.write(json.dumps(traces_map[fname], ensure_ascii=False) + "\n")
 
-            # Write output JSON
-            output_path = os.path.join(output_dir, fname)
-            with open(output_path, "w", encoding="utf-8") as f:
-                json.dump(output_payload, f, ensure_ascii=False, indent=2)
-
-            # Record trace entry
-            trace_entry = {
-                "case_id": case_input.get("case_id"),
-                "input_file": fname,
-                "traces": case_traces,
-                "primary_issue": output_payload["case_assessment"]["primary_issue"],
-                "case_status": output_payload["case_assessment"]["case_status"]
-            }
-            tf.write(json.dumps(trace_entry, ensure_ascii=False) + "\n")
-
-    # Copy trace.jsonl to root as well
     shutil.copy(logging_trace_file, root_trace_file)
 
     print(f"Output files written to '{output_dir}/'")
@@ -85,17 +124,8 @@ def main():
     print(f"Generated metadata.json in '{logging_dir}/' and root.")
 
     # 4. Create output.zip containing output/EC_001.json to output/EC_050.json
-    zip_path = "output.zip"
-    if os.path.exists(zip_path):
-        os.remove(zip_path)
-
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for fname in input_files:
-            file_path = os.path.join(output_dir, fname)
-            arc_name = f"output/{fname}"
-            zf.write(file_path, arcname=arc_name)
-            
-    print(f"Created submission archive '{zip_path}' containing {len(input_files)} JSON files under 'output/' directory.")
+    create_output_zip(output_dir, input_files, zip_path="output.zip")
+    
     print("=" * 60)
     print("Pipeline Execution Completed Successfully!")
     print("=" * 60)
